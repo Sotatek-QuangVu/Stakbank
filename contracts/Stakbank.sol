@@ -114,6 +114,7 @@ contract StakbankTest0 is ERC20, Ownable {
             }
         }
         delete _eStaker[msg.sender];
+        delete _rewardWithdrawed[msg.sender];
     }
 
     //-------------------reward-------------------/
