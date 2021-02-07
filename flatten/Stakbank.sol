@@ -832,9 +832,5 @@ contract StakbankTest0 is ERC20, Ownable {
         staker.transfer(userReward - fee);
         platformOwner.transfer(fee);
         _ethRewarded = _ethRewarded.sub(userReward);
-
-        for(uint i = 0; i < _eStaker[msg.sender].length; i++) {
-            _eStaker[msg.sender][i]._cummEth = _cummEth;
-        }
     }
 }
