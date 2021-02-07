@@ -1,4 +1,4 @@
-const { ethers } = require("hardhat")
+const { ethers } = require("hardhat");
 
 async function main() {
     const [deployer] = await ethers.getSigners();
@@ -7,10 +7,9 @@ async function main() {
     const balance = await deployer.getBalance();
     console.log(`balance of deployer: ${balance.toString()}`);
 
-    const Bank = await ethers.getContractFactory('Stakbank');
-    const Stakbank = Bank.deploy();
+    const Bank = await ethers.getContractFactory('StakbankTest0');
+    const Stakbank = await Bank.deploy(50000000000);
     console.log(`my contract address: ${Stakbank.address}`);
-    
 }
 
 main()
