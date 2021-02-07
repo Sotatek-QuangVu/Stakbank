@@ -657,18 +657,19 @@ contract Ownable {
 
 pragma solidity >=0.6.0 <0.8.0;
 
-
 contract StakbankTest0 is ERC20, Ownable {
     using SafeMath for uint;
 
     mapping(address => uint) private _staking;
     mapping(address => bool) private _isStakeHolder;
+    mapping(address => uint) private _rewardWithdrawed;
     
     uint private _validCoinNum;
     uint public periodTime; // minimum time to trigger distribute and time to be valid coin
     uint private _lastDis; // last reward distribution
     uint public feePercent;
-
+    uint private _ethRewarded;
+    uint private _coinWillValid; // t1-------t2------..... (coin  not valid in t1 but valid in t2)
     uint private _cummEth; // cumulative Eth value per JST
     
     struct Transaction {
@@ -681,14 +682,19 @@ contract StakbankTest0 is ERC20, Ownable {
     struct Detail {
         uint _cummEth;
         uint coin;
+        uint time;
     }
     mapping(address => Detail[]) private _eStaker;
-
+    
     constructor(uint _totalSupply) ERC20("JST Test0", "JST T0", _totalSupply) public {
         owner = msg.sender;
+        _validCoinNum = 0;
         periodTime = 120 seconds;
         _lastDis = block.timestamp;
         feePercent = 8;
+        _ethRewarded = 0;
+        _coinWillValid = 0;
+        _cummEth = 0;
     }
 
     receive() external payable {
@@ -717,14 +723,26 @@ contract StakbankTest0 is ERC20, Ownable {
         _balances[recipient] = _balances[recipient].add(amount);
     }
 
+    function fromLastDis() public view returns (uint) {
+        return (block.timestamp - _lastDis);
+    }
+
+    function numEthToReward() public view returns (uint) {
+        return ((address(this).balance) - _ethRewarded);
+    }
+
+    function numRewardWithdrawed(address add) public view returns (uint) {
+        return (_rewardWithdrawed[add]);
+    }
 
     //-------------------staking--------------------/
     function stake(uint amount) public {
+        uint cur = block.timestamp;
         require((amount != 0) && (msg.sender != owner));
         if (!isHolder(msg.sender)) addHolder(msg.sender);
         transferForStaking(msg.sender, address(this), amount);
         _staking[msg.sender] = _staking[msg.sender].add(amount);
-        Transaction memory t = Transaction(msg.sender, block.timestamp, amount);
+        Transaction memory t = Transaction(msg.sender, cur, amount);
         stakingTrans.push(t);
     }
 
@@ -737,34 +755,58 @@ contract StakbankTest0 is ERC20, Ownable {
         withdrawReward();
         removeHolder(msg.sender);
         transferForStaking(address(this), msg.sender, _staking[msg.sender]);
+        _staking[msg.sender] = 0;
+        for(uint i = 0; i < _eStaker[msg.sender].length; i++) {
+            Detail memory detail = _eStaker[msg.sender][i];
+            if (detail.time > _lastDis) break;
+            if (_lastDis - detail.time < periodTime) {
+                _coinWillValid = _coinWillValid.sub(detail.coin);
+            } else {
+                _validCoinNum = _validCoinNum.sub(detail.coin);
+            }
+        }
         delete _eStaker[msg.sender];
     }
-    
 
     //-------------------reward-------------------/
     function rewardDistribution() public onlyOwner {
         uint cur = block.timestamp;
         require(cur - _lastDis >= periodTime);
 
+        _validCoinNum = _validCoinNum.add(_coinWillValid);
+        _coinWillValid = 0;
+        
         for(uint i = 0; i < stakingTrans.length; i++) {
             Transaction memory t = stakingTrans[i];
             if (cur - t.time >= periodTime) {
                 _validCoinNum = _validCoinNum.add(t.coin);
             } else {
-                Detail memory detail = Detail(_cummEth, t.coin);
-                _eStaker[t.staker].push(detail);
+                _coinWillValid = _coinWillValid.add(t.coin);
             }
         }
 
-        uint ethToReward = address(this).balance;
+        uint ethToReward = numEthToReward();
+        
+        uint oldcumEth = _cummEth;
         if (_validCoinNum > 0) {
-            _cummEth = _cummEth.add(ethToReward.div(_validCoinNum));
-            for(uint i = 0; i < stakingTrans.length; i++) {
-                Transaction memory t = stakingTrans[i];
-                if (cur - t.time < periodTime) break;
-                Detail memory detail = Detail(_cummEth, t.coin);
-                _eStaker[t.staker].push(detail);
+            uint valuePerCoin = ethToReward.div(_validCoinNum);
+            _cummEth = _cummEth.add(valuePerCoin);
+        }
+
+        for(uint i = 0; i < stakingTrans.length; i++) {
+            Transaction memory t = stakingTrans[i];
+            Detail memory detail;
+            if (cur - t.time >= periodTime) {
+                detail = Detail(oldcumEth, t.coin, t.time);
+            } else {
+                detail = Detail(_cummEth, t.coin, t.time);
             }
+            _eStaker[t.staker].push(detail);
+        }
+
+        if (_validCoinNum > 0) {
+            uint valuePerCoin = ethToReward.div(_validCoinNum);
+            _ethRewarded = _ethRewarded.add(valuePerCoin.mul(_validCoinNum));
         }
 
         delete stakingTrans;
@@ -779,26 +821,20 @@ contract StakbankTest0 is ERC20, Ownable {
             uint addEth = detail.coin.mul(_cummEth - detail._cummEth);
             userReward = userReward.add(addEth);
         }
-        uint fee = userReward.mul(feePercent).div(100);
+        uint temp = userReward;
+        userReward = userReward.sub(_rewardWithdrawed[msg.sender]);
+        _rewardWithdrawed[msg.sender] = temp;
 
+        uint fee = userReward.mul(feePercent).div(100);
         address payable staker = address(uint(address(msg.sender)));
         address payable platformOwner = address(uint(address(owner)));
 
         staker.transfer(userReward - fee);
         platformOwner.transfer(fee);
+        _ethRewarded = _ethRewarded.sub(userReward);
 
         for(uint i = 0; i < _eStaker[msg.sender].length; i++) {
             _eStaker[msg.sender][i]._cummEth = _cummEth;
         }
-    }
-
-    //------------------time-------------------------/
-    function fromLastDis() public view returns (uint) {
-        return (block.timestamp - _lastDis);
-    }
-
-    //-----------------eth balance of platform--------/
-    function getPlatformEthBalance() public view returns (uint) {
-        return (address(this).balance);
     }
 }
