@@ -1,12 +1,13 @@
 //SPDX-License-Identifier: UNLICENSED
 pragma solidity >=0.6.0 <0.8.0;
 
-import "./libraries/ERC20.sol";
-import "./libraries/SafeMath.sol";
-import "./libraries/Ownable.sol";
+import "./SafeMath.sol";
+import "./Ownable.sol";
+import "./JSTCoin.sol";
 
-contract StakbankTest0 is ERC20, Ownable {
+contract StakbankTest1 is Ownable {
     using SafeMath for uint;
+    address private _JSTCoinContract;
 
     mapping(address => uint) private _staking;
     mapping(address => bool) private _isStakeHolder;
@@ -34,7 +35,8 @@ contract StakbankTest0 is ERC20, Ownable {
     }
     mapping(address => Detail[]) private _eStaker;
     
-    constructor(uint _totalSupply) ERC20("JST Test0", "JST T0", _totalSupply) public {
+    constructor(address JSTCoinContract_) public {
+        _JSTCoinContract = JSTCoinContract_;
         owner = msg.sender;
         _validCoinNum = 0;
         periodTime = 120 seconds;
@@ -66,11 +68,6 @@ contract StakbankTest0 is ERC20, Ownable {
         _isStakeHolder[add] = false;
     }
 
-    function transferForStaking(address sender, address recipient, uint amount) private {
-        _balances[sender] = _balances[sender].sub(amount);
-        _balances[recipient] = _balances[recipient].add(amount);
-    }
-
     function fromLastDis() public view returns (uint) {
         return (block.timestamp - _lastDis);
     }
@@ -88,7 +85,10 @@ contract StakbankTest0 is ERC20, Ownable {
         uint cur = block.timestamp;
         require((amount != 0) && (msg.sender != owner));
         if (!isHolder(msg.sender)) addHolder(msg.sender);
-        transferForStaking(msg.sender, address(this), amount);
+
+        // call to JST token contract to transfer JST from user to Stakbank
+        JSTCoinTest1(_JSTCoinContract).transferForStaking(msg.sender, amount);
+
         _staking[msg.sender] = _staking[msg.sender].add(amount);
         Transaction memory t = Transaction(msg.sender, cur, amount);
         stakingTrans.push(t);
@@ -102,7 +102,10 @@ contract StakbankTest0 is ERC20, Ownable {
         require(isHolder(msg.sender));
         withdrawReward();
         removeHolder(msg.sender);
-        transferForStaking(address(this), msg.sender, _staking[msg.sender]);
+
+        // call to JST token contract to transfer JST from Stakbank to user
+        JSTCoinTest1(_JSTCoinContract).transferForUnstaking(msg.sender, _staking[msg.sender]);
+        
         _staking[msg.sender] = 0;
         for(uint i = 0; i < _eStaker[msg.sender].length; i++) {
             Detail memory detail = _eStaker[msg.sender][i];
