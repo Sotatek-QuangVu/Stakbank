@@ -4,6 +4,7 @@ pragma solidity >=0.6.0 <0.8.0;
 import "./SafeMath.sol";
 import "./Ownable.sol";
 import "./JSTCoin.sol";
+import "hardhat/console.sol";
 
 contract StakbankTest1 is Ownable {
     using SafeMath for uint;

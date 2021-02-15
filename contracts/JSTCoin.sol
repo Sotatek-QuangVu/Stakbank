@@ -3,15 +3,16 @@ pragma solidity >=0.6.0 <0.8.0;
 
 import "./ERC20.sol";
 import "./Ownable.sol";
+import "hardhat/console.sol";
 
 contract JSTCoinTest1 is ERC20, Ownable {
-    address private Stakbank;
+    address public Stakbank;
 
     constructor(uint _totalSupply) ERC20("JSTCoinTest1", "JST T1", _totalSupply) {
         Stakbank = address(0);
     }
 
-    function makeStakbankValid(address bank) external onlyOwner {
+    function verifyStakbank(address bank) external onlyOwner {
         Stakbank = bank;
     }
 

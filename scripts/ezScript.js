@@ -7,7 +7,7 @@ async function main() {
     const balance = await deployer.getBalance();
     console.log(`balance of deployer: ${balance.toString()}`);
 
-    const Bank = await ethers.getContractFactory('StakbankTest0');
+    const Bank = await ethers.getContractFactory('StakbankTest1');
     const Stakbank = await Bank.deploy(50000000000);
     console.log(`my contract address: ${Stakbank.address}`);
 }
