@@ -3,7 +3,6 @@ pragma solidity >=0.6.0 <0.8.0;
 
 import "./ERC20.sol";
 import "./Ownable.sol";
-import "hardhat/console.sol";
 
 contract JSTCoinTest2 is ERC20, Ownable {
     address public Stakbank;

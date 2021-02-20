@@ -4,7 +4,6 @@ pragma solidity >=0.6.0 <0.8.0;
 import "./SafeMath.sol";
 import "./Ownable.sol";
 import "./JSTCoin.sol";
-import "hardhat/console.sol";
 
 contract StakbankTest2 is Ownable {
     using SafeMath for uint;
@@ -39,6 +38,12 @@ contract StakbankTest2 is Ownable {
     mapping(address => mapping(uint => uint)) private _posDetail;
     mapping(address => uint) private _numberStake;
     
+    event UserStaked(address indexed user, uint amount, uint timestamp);
+    event UserUnstakedWithId(address indexed user, uint indexed detailId, uint rewardAmount);
+    event UserUnstakedAll(address indexed user);
+    event adminDistributeReward(uint ethToReward);
+    event UserWithdrawedReward(address indexed user, uint rewardAmount);
+
     constructor(address JSTCoinContract_) public {
         _JSTCoinContract = JSTCoinContract_;
         owner = msg.sender;
@@ -89,7 +94,6 @@ contract StakbankTest2 is Ownable {
         _posDetail[user][_numberStake[user]] = _eStaker[user].length;
         Transaction memory t = Transaction(user, current, amount, _numberStake[user]);
         stakingTrans.push(t);
-        debug(user, _numberStake[user]);
     }
 
     function isUnstaked(address user, uint idStake) private view returns (bool) {
@@ -108,6 +112,7 @@ contract StakbankTest2 is Ownable {
         createNewTransaction(msg.sender, current, amount);
         address payable admin = address(uint(address(owner)));
         admin.transfer(platformFee);
+        emit UserStaked(msg.sender, amount, current);
     }
 
     function stakingOf(address add) public view returns (uint) {
@@ -132,18 +137,18 @@ contract StakbankTest2 is Ownable {
         require(!isUnstaked(msg.sender, idStake), "idStake unstaked");
         uint _posIdStake = _posDetail[msg.sender][idStake] - 1;
         Detail memory d = _eStaker[msg.sender][_posIdStake];
+        uint reward = 0;
         if (d.isOldCoin) {
             _oldCoin = _oldCoin.sub(d.coin);
-            uint reward = _cummEth.sub(d.lastWithdraw);
+            reward = _cummEth.sub(d.lastWithdraw);
             reward = reward.mul(d.coin);
             reward = reward.add(d.firstReward);
             address payable staker = address(uint160(address(msg.sender)));
             staker.transfer(reward);
             _ethRewarded = _ethRewarded.sub(reward);
-            console.log("reward unstake | user: %s | money: %s", msg.sender, reward);
-            console.log("       main reward: %s | first reward: %s", (_cummEth.sub(d.lastWithdraw)).mul(d.coin), d.firstReward);
         }
         unstakeId(msg.sender, idStake);
+        emit UserUnstakedWithId(msg.sender, idStake, reward);
     }
 
     function unstakeAll() public {
@@ -154,11 +159,12 @@ contract StakbankTest2 is Ownable {
         }
         delete _eStaker[msg.sender];
         delete _numberStake[msg.sender];
+        emit UserUnstakedAll(msg.sender);
     }
 
     //-------------------reward-------------------/
     function rewardDistribution() public onlyOwner {
-        uint current = block.timestamp;  console.log("Time distribution: %s", current);
+        uint current = block.timestamp;
         uint timelast = current - _lastDis;
         require(timelast >= periodTime, "Too soon to trigger reward distribution");
         uint totalTime = timelast.mul(_oldCoin);
@@ -168,7 +174,7 @@ contract StakbankTest2 is Ownable {
             uint newTime = (current.sub(t.time)).mul(t.coin);
             totalTime = totalTime.add(newTime);
         }
-        uint ethToReward = numEthToReward(); console.log("Eth to reward: %s | timelast: %s | totaltime: %s", ethToReward, timelast, totalTime);
+        uint ethToReward = numEthToReward();
         if (totalTime > 0) {
             uint unitValue = ethToReward/(totalTime);
             _cummEth = _cummEth.add(unitValue.mul(timelast));
@@ -179,7 +185,6 @@ contract StakbankTest2 is Ownable {
                 _eStaker[t.staker][_posIdStake].lastWithdraw = _cummEth;
                 uint firstTime = current - t.time; 
                 _eStaker[t.staker][_posIdStake].firstReward = unitValue.mul(firstTime).mul(t.coin);
-                console.log("unitvalue: %s | firsttime: %s | coin: %s", unitValue, firstTime, t.coin);
                 _oldCoin = _oldCoin.add(t.coin);
                 _eStaker[t.staker][_posIdStake].isOldCoin = true;
             }
@@ -187,32 +192,24 @@ contract StakbankTest2 is Ownable {
             _ethRewarded = _ethRewarded.add(unitValue.mul(totalTime));
         }
         _lastDis = block.timestamp;
+        emit adminDistributeReward(ethToReward);
     }
 
     function withdrawReward() public {
         require(isHolder(msg.sender), "Not a Staker");
-        console.log("user: %s", msg.sender);
         uint userReward = 0;
         for(uint i = 0; i < _eStaker[msg.sender].length; i++) {
             Detail memory detail = _eStaker[msg.sender][i];
             if (!detail.isOldCoin) continue;
             uint addEth = (detail.coin).mul(_cummEth.sub(detail.lastWithdraw));
-            console.log("   main reward: %s | firstReward", addEth, detail.firstReward);
             addEth = addEth.add(detail.firstReward);
             userReward = userReward.add(addEth);
             _eStaker[msg.sender][i].firstReward = 0;
             _eStaker[msg.sender][i].lastWithdraw = _cummEth;
         }
-        // console.log(userReward);
         address payable staker = address(uint(address(msg.sender)));
-        console.log("%s | get draw reward: %s | while stakbank have: %s", msg.sender, userReward, (address(this).balance));
         staker.transfer(userReward);
         _ethRewarded = _ethRewarded.sub(userReward);
-    }
-
-    ///////////////////////////
-    function debug(address user, uint idStake) private view {
-        uint _pos = _posDetail[user][idStake] - 1;
-        console.log("User: %s | idStake: %s | Time Stake: %s", user, idStake, _eStaker[user][_pos].time);
+        emit UserWithdrawedReward(msg.sender, userReward);
     }
 }
