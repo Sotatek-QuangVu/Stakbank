@@ -5,10 +5,10 @@ import "./ERC20.sol";
 import "./Ownable.sol";
 import "hardhat/console.sol";
 
-contract JSTCoinTest1 is ERC20, Ownable {
+contract JSTCoinTest2 is ERC20, Ownable {
     address public Stakbank;
 
-    constructor(uint _totalSupply) ERC20("JSTCoinTest1", "JST T1", _totalSupply) {
+    constructor(uint _totalSupply) ERC20("JSTCoinTest2", "JST T2", _totalSupply) {
         Stakbank = address(0);
     }
 
