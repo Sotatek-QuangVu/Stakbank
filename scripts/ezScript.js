@@ -1,15 +1,14 @@
 const { ethers } = require("hardhat");
 
 async function main() {
-    const [deployer] = await ethers.getSigners();
-    console.log(`deploying with the account ${deployer.address}...`);
-
-    const balance = await deployer.getBalance();
-    console.log(`balance of deployer: ${balance.toString()}`);
-
-    const Bank = await ethers.getContractFactory('StakbankTest1');
-    const Stakbank = await Bank.deploy(50000000000);
-    console.log(`my contract address: ${Stakbank.address}`);
+    let JST = await ethers.getContractFactory("JST");
+    let jstToken = await JST.deploy(ethers.utils.parseUnits("100000", 18));
+    await jstToken.deployed();
+    console.log(jstToken.address);
+    let StakBank = await ethers.getContractFactory("StakBank");
+    let stakBank = await StakBank.deploy(jstToken.address);
+    await stakBank.deployed();
+    console.log(stakBank.address);
 }
 
 main()
