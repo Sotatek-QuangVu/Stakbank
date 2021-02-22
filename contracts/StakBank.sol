@@ -12,7 +12,8 @@ contract StakBank is Ownable {
     mapping(address => uint) private _staking;
     
     uint public periodTime; // minimum time to trigger distribution
-    uint public feePerCoin;
+    uint public feeUnitPercent; // 1 unitJST = feeUnitPercent / 100 (wei)
+    uint public minAmountToStake;
 
     uint private _ethRewarded;
     uint private _cummEth; // cumulative Eth value per JST
@@ -51,11 +52,12 @@ contract StakBank is Ownable {
     constructor(address tokenAddress) {
         token = IERC20(tokenAddress);
         periodTime = 60 seconds;
-        feePerCoin = 100;
+        feeUnitPercent = 5;
         _ethRewarded = 0;
         _cummEth = 0;
         _totalStakedBeforeLastDis = 0;
         _lastDis = block.timestamp;
+        minAmountToStake = 50;
     }
 
     receive() external payable {
@@ -69,11 +71,19 @@ contract StakBank is Ownable {
     //------------------ setter func-------------------/
     function setPeriodTime(uint time) external onlyOwner {
         periodTime = time;
+
         emit StakBankConfigurationChanged(msg.sender, block.timestamp);
     }
 
     function setFeePerCoin(uint value) external onlyOwner {
-        feePerCoin = value;
+        feeUnitPercent = value;
+
+        emit StakBankConfigurationChanged(msg.sender, block.timestamp);
+    }
+
+    function setMinAmountToStake(uint value) external onlyOwner {
+        minAmountToStake = value;
+        
         emit StakBankConfigurationChanged(msg.sender, block.timestamp);
     }
 
@@ -109,9 +119,10 @@ contract StakBank is Ownable {
     function stake(uint amount) public payable {
         require(amount != 0, "Stake amount must be positive");
         require(msg.sender != owner, "Owner cannot be staker");
+        require(amount >= minAmountToStake, "Need to stake more token");
 
         uint current = block.timestamp;
-        uint platformFee = feePerCoin.mul(amount);
+        uint platformFee = amount.mul(feeUnitPercent).div(100);
 
         require(msg.value >= platformFee);
         require(_deliverTokensFrom(msg.sender, address(this), amount), "Failed to transfer from staker to StakBank");
@@ -229,7 +240,7 @@ contract StakBank is Ownable {
         require(isHolder(msg.sender), "Not a Staker");
 
         uint userReward = 0;
-        
+
         for(uint i = 0; i < _eStaker[msg.sender].length; i++) {
             Detail memory detail = _eStaker[msg.sender][i];
             if (!detail.isOldCoin) continue;
