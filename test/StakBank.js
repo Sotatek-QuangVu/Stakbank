@@ -168,6 +168,3 @@ describe("Stakbank contract", function() {
 
 
 });
-
-
-

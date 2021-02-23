@@ -75,7 +75,7 @@ contract StakBank is Ownable {
         emit StakBankConfigurationChanged(msg.sender, block.timestamp);
     }
 
-    function setFeePerCoin(uint value) external onlyOwner {
+    function setFeeUnitPercent(uint value) external onlyOwner {
         feeUnitPercent = value;
 
         emit StakBankConfigurationChanged(msg.sender, block.timestamp);
@@ -112,7 +112,7 @@ contract StakBank is Ownable {
     }
 
     function isUnstaked(address user, uint idStake) private view returns (bool) {
-        return (_posDetail[user][idStake] == 0 ? true : false);
+        return (_posDetail[user][idStake] == 0);
     }
 
     //-------------------staking--------------------/
@@ -143,13 +143,16 @@ contract StakBank is Ownable {
 
     function unstakeId(address sender, uint idStake) private {
         uint _posIdStake = _posDetail[sender][idStake] - 1;
-        Detail memory d = _eStaker[sender][_posIdStake];
-        uint coinNum = d.amount;
+        Detail memory detail = _eStaker[sender][_posIdStake];
+        uint coinNum = detail.amount;
+
         _deliverTokens(sender, coinNum);
+
         _staking[sender] -= coinNum;
         _eStaker[sender][_posIdStake] = _eStaker[sender][_eStaker[sender].length - 1];
         _posDetail[sender][_eStaker[sender][_posIdStake].detailId] = _posIdStake + 1;
         _eStaker[sender].pop();
+
         delete _posDetail[sender][idStake];
     }
 

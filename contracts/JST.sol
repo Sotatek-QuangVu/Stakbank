@@ -5,18 +5,18 @@ import "./ERC20.sol";
 import "./Ownable.sol";
 
 contract JST is ERC20, Ownable {
-    address public Stakbank;
+    address public StakBank;
 
     constructor(uint _totalSupply) ERC20("Jig Stack", "JST", _totalSupply) {
-        Stakbank = address(0);
+        StakBank = address(0);
     }
 
-    function verifyStakbank(address bank) external onlyOwner {
-        Stakbank = bank;
+    function verifyStakBank(address bank) external onlyOwner {
+        StakBank = bank;
     }
 
-    modifier onlyStakbank() {
-        require(Stakbank == msg.sender);  
+    modifier onlyStakBank() {
+        require(StakBank == msg.sender);  
         _;
     }
 }
