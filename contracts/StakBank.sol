@@ -34,17 +34,17 @@ contract StakBank is Ownable {
     Transaction[] private stakingTrans;
     
     struct Detail {
-        uint detailId;
         uint stakedAmount;
         uint coinToCalcReward;
         uint ethFirstReward;
         uint cummEthLastWithdraw;
         bool isOldCoin;
+        bool isUnstaked;
+
+        uint timestamp;
     }
 
     mapping(address => Detail[]) private _eStaker;
-    mapping(address => mapping(uint => uint)) private _posDetail;
-    mapping(address => uint) private _numberStake;
     
     event UserStaked(address indexed user, uint amount, uint timestamp);
     event UserUnstakedWithId(address indexed user, uint indexed detailId, uint rewardAmount);
@@ -157,18 +157,14 @@ contract StakBank is Ownable {
     }
 
     function unstakeId(address sender, uint idStake) private {
-        uint _posIdStake = _posDetail[sender][idStake] - 1;
-        Detail memory detail = _eStaker[sender][_posIdStake];
+        Detail memory detail = _eStaker[sender][idStake - 1];
         uint coinNum = detail.stakedAmount;
 
         _deliverTokens(sender, coinNum);
 
         _staking[sender] = _staking[sender].sub(coinNum);
-        _eStaker[sender][_posIdStake] = _eStaker[sender][_eStaker[sender].length - 1];
-        _posDetail[sender][_eStaker[sender][_posIdStake].detailId] = _posIdStake + 1;
-        _eStaker[sender].pop();
 
-        delete _posDetail[sender][idStake];
+        _eStaker[sender][idStake - 1].isUnstaked = true;
     }
 
     function unstakeWithId(uint idStake) public {
@@ -176,8 +172,7 @@ contract StakBank is Ownable {
         require(_eStaker[msg.sender].length > 1, "Cannot unstake the last with this method");
         require(!_isUnstaked(msg.sender, idStake), "idStake unstaked");
 
-        uint _posIdStake = _posDetail[msg.sender][idStake] - 1;
-        Detail memory detail = _eStaker[msg.sender][_posIdStake];
+        Detail memory detail = _eStaker[msg.sender][idStake - 1];
         uint reward = 0;
 
         if (detail.isOldCoin) {
@@ -205,11 +200,12 @@ contract StakBank is Ownable {
         withdrawReward();
 
         for(uint i = 0; i < _eStaker[msg.sender].length; i++) {
-            unstakeId(msg.sender, _eStaker[msg.sender][i].detailId);
+            if (!_isUnstaked(msg.sender, i + 1)) {
+                unstakeId(msg.sender, i + 1);
+            }
         }
 
         delete _eStaker[msg.sender];
-        delete _numberStake[msg.sender];
 
         emit UserUnstakedAll(msg.sender);
     }
@@ -260,16 +256,16 @@ contract StakBank is Ownable {
                     continue;
                 }
 
-                uint _posIdStake = _posDetail[transaction.staker][transaction.detailId] - 1;
-                _eStaker[transaction.staker][_posIdStake].cummEthLastWithdraw = _cummEth;
+                uint idStake = transaction.detailId;
+                _eStaker[ transaction.staker ][ idStake - 1 ].cummEthLastWithdraw = _cummEth;
                 
                 uint numTimeWithStandardUnit = (current.sub(transaction.timestamp)).div(unitTime);
                 uint numUnitCoin = (transaction.coinToCalcReward).div(unitCoinToDivide);
 
-                _eStaker[transaction.staker][_posIdStake].ethFirstReward = unitValue.mul(numUnitCoin).mul(numTimeWithStandardUnit);
-
+                _eStaker[ transaction.staker ][ idStake - 1 ].ethFirstReward = unitValue.mul(numUnitCoin).mul(numTimeWithStandardUnit);
+ 
                 _totalStakedBeforeLastDis = _totalStakedBeforeLastDis.add(transaction.coinToCalcReward);
-                _eStaker[transaction.staker][_posIdStake].isOldCoin = true;
+                _eStaker[ transaction.staker ][ idStake - 1 ].isOldCoin = true;
             }
 
             delete stakingTrans;
@@ -316,14 +312,10 @@ contract StakBank is Ownable {
     //---------------------------------------------------------------------------
 
     function _createNewTransaction(address user, uint current, uint stakedAmount, uint coinToCalcReward) private {
-        _numberStake[user] ++;
-
-        Detail memory detail = Detail(_numberStake[user], stakedAmount, coinToCalcReward, 0, 0, false);
+        Detail memory detail = Detail(stakedAmount, coinToCalcReward, 0, 0, false, false, current);
         _eStaker[user].push(detail);
 
-        _posDetail[user][_numberStake[user]] = _eStaker[user].length;
-
-        Transaction memory t = Transaction(user, current, coinToCalcReward, _numberStake[user]);
+        Transaction memory t = Transaction(user, current, coinToCalcReward, _eStaker[user].length);
         stakingTrans.push(t);
     }
 
@@ -332,7 +324,10 @@ contract StakBank is Ownable {
     }
 
     function _isUnstaked(address user, uint idStake) private view returns (bool) {
-        return (_posDetail[user][idStake] == 0);
+        if ((idStake < 1) || (idStake > _eStaker[user].length)) {
+            return true;
+        }
+        return (_eStaker[user][idStake - 1].isUnstaked);
     }
 
     function _deliverTokensFrom(address from, address to, uint amount) private returns (bool) {
@@ -384,14 +379,19 @@ contract StakBank is Ownable {
                 continue;
             }
 
-            uint _posIdStake = _posDetail[transaction.staker][transaction.detailId] - 1;
-            _eStaker[transaction.staker][_posIdStake].cummEthLastWithdraw = _cummEth;
+            uint idStake = transaction.detailId;
+            _eStaker[ transaction.staker ][ idStake - 1 ].cummEthLastWithdraw = _cummEth;
 
             _totalStakedBeforeLastDis = _totalStakedBeforeLastDis.add(transaction.coinToCalcReward);
-            _eStaker[transaction.staker][_posIdStake].isOldCoin = true;
+            _eStaker[ transaction.staker ][ idStake - 1 ].isOldCoin = true;
         }
 
         delete stakingTrans;
+    }
+
+    function timeStakedTransaction(uint idStake) public view returns (uint) {
+        if (idStake < 1 || idStake > _eStaker[msg.sender].length) return 0;
+        return _eStaker[msg.sender][idStake - 1].timestamp;
     }
 
 }
