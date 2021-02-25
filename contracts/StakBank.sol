@@ -286,7 +286,7 @@ contract StakBank is Ownable {
         for(uint i = 0; i < _eStaker[msg.sender].length; i++) {
             Detail memory detail = _eStaker[msg.sender][i];
 
-            if (!detail.isOldCoin) {
+            if (!detail.isOldCoin || detail.isUnstaked) {
                 continue;
             }
 
