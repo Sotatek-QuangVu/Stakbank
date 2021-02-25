@@ -4,8 +4,10 @@ pragma solidity >=0.7.0 <0.8.0;
 import "./SafeMath.sol";
 import "./Ownable.sol";
 import "./IERC20.sol";
+import "./Pausable.sol";
 
-contract StakBank is Ownable {
+
+contract StakBank is Ownable, Pausable {
     using SafeMath for uint;
     IERC20 public token;
 
@@ -16,13 +18,17 @@ contract StakBank is Ownable {
     uint public minAmountToStake;
     uint public lastDis;
     uint public decimal;
-    uint public minEthNeededToReward; // 0.0006 eth =  600000000000000 wei = (10^9 / 0.0001) * 60(second | minute) -> pool can hold max 1 billion JST
     uint public ethRewardedNotWithdraw;
     uint public totalStaked;
 
-    uint private unitCoinToDivide; // 1e14 = 100000000000000 = 0.0001 JST | Number of staked (JST) coin to be rewarded = 0.0001 * N
+    // fixed! | 0.0006 eth =  600000000000000 wei = (10^9/0.0001)*60(second|minute)->pool can hold max 1 billion JST
+    uint public minEthNeededToReward; 
+
     uint private _cummEth;
     uint private _totalStakedBeforeLastDis;
+
+    // fixed! | 0.0001 JST = 100000000000000 | Number of staked (JST) coin to be rewarded = 0.0001 * N
+    uint private unitCoinToDivide; 
 
     struct Transaction {
         address staker;
@@ -33,6 +39,7 @@ contract StakBank is Ownable {
 
     Transaction[] private stakingTrans;
     
+    // each staking of each user
     struct Detail {
         uint stakedAmount;
         uint coinToCalcReward;
@@ -40,8 +47,6 @@ contract StakBank is Ownable {
         uint cummEthLastWithdraw;
         bool isOldCoin;
         bool isUnstaked;
-
-        uint timestamp;
     }
 
     mapping(address => Detail[]) private _eStaker;
@@ -77,7 +82,8 @@ contract StakBank is Ownable {
 
     }
 
-    //------------------ setter func-------------------/
+    /// @notice Owner can change minimum time to trigger distribution
+    /// @param value Time you wanna change to.
     function setPeriodTime(uint value) external onlyOwner {
         require(value > 0, "Minimum time to next distribution must be positive number");
 
@@ -86,18 +92,24 @@ contract StakBank is Ownable {
         emit StakBankConfigurationChanged(msg.sender, block.timestamp);
     }
 
+    /// @dev platformFee = staked_coin * FeeUnit / (10 ^ Decimal)
+    /// @param value FeeUnit in above formula
     function setFeeUnit(uint value) external onlyOwner {
         feeUnit = value;
 
         emit StakBankConfigurationChanged(msg.sender, block.timestamp);
     }
 
+    /// @dev platformFee = staked_coin * FeeUnit / (10 ^ Decimal)
+    /// @param value Decimal in above formula
     function setDecimal(uint value) external onlyOwner {
         decimal = value;
 
         emit StakBankConfigurationChanged(msg.sender, block.timestamp);
     }
 
+    /// @notice Owner can change minimum coin to stake but that number must not lower than 0.0001 JST
+    /// @param value Min coin with that user can stake
     function setMinAmountToStake(uint value) external onlyOwner {
         require(value >= unitCoinToDivide, "Lower than 0.0001 JST");
 
@@ -106,18 +118,20 @@ contract StakBank is Ownable {
         emit StakBankConfigurationChanged(msg.sender, block.timestamp);
     }
 
-    //-------------------helper public func-------------------/
-    
+    /// @notice Countdown seconds to next reward distribution
     function nextDistribution() public view returns (uint) {
         uint cur = block.timestamp;
         if (cur >= lastDis + periodTime) return 0;
         return (periodTime - (cur - lastDis));
     }
 
+    /// @notice Eth used to reward in next distribution
     function numEthToReward() public view returns (uint) {
         return ((address(this).balance) - ethRewardedNotWithdraw);
     }
 
+    /// @notice Return eth fee corresponding to an amount of staking coin.
+    /// @param amount Staking coin amount
     function feeCalculator(uint amount) public view returns (uint) {
         uint remainder = amount % unitCoinToDivide;
         amount = amount.sub(remainder);
@@ -125,8 +139,10 @@ contract StakBank is Ownable {
         return platformFee;
     }
 
-    //-------------------staking--------------------/
-    function stake(uint stakedAmount) public payable {
+    /// @notice User stake coin
+    /// @param stakedAmount Amount of coin you wanna stake.
+    /// @dev Not using remainder of stakedAmount with unitCoinToDivide to calc reward
+    function stake(uint stakedAmount) public payable whenNotPaused {
         require(msg.sender != owner, "Owner cannot stake");
         require(stakedAmount >= minAmountToStake, "Need to stake more token");
         require(totalStaked + stakedAmount <= (10 ** 27), "Reached limit coin in pool");
@@ -152,10 +168,15 @@ contract StakBank is Ownable {
         emit UserStaked(msg.sender, stakedAmount, current);
     }
 
+    /// @notice Get amount of staking coin of an user
+    /// @param user User'address you wanna check staking balance
     function stakingOf(address user) public view returns (uint) {
         return (_staking[user]);
     }
 
+    /// @dev Send back staking coin to user. Decrease total amount of staking coin in pool. Mark transaction as unstaked.
+    /// @param sender User wanna unstake
+    /// @param idStake Order of staking transaction user wanna unstake
     function unstakeId(address sender, uint idStake) private {
         Detail memory detail = _eStaker[sender][idStake - 1];
         uint coinNum = detail.stakedAmount;
@@ -169,7 +190,10 @@ contract StakBank is Ownable {
         totalStaked = totalStaked.sub(coinNum);
     }
 
-    function unstakeWithId(uint idStake) public {
+    /// @notice User can unstake with idStake, get reward of that staking transaction
+    /// @param idStake Order of staking transaction user wanna unstake
+    /// @dev Order will be count from 0 when user unstake all
+    function unstakeWithId(uint idStake) public whenNotPaused {
         require(_isHolder(msg.sender), "Not a Staker");
         require(_eStaker[msg.sender].length > 1, "Cannot unstake the last with this method");
         require(!_isUnstaked(msg.sender, idStake), "idStake unstaked");
@@ -196,7 +220,8 @@ contract StakBank is Ownable {
         emit UserUnstakedWithId(msg.sender, idStake, reward);
     }
 
-    function unstakeAll() public {
+    /// @notice User unstake all of staking transaction and get all reward
+    function unstakeAll() public whenNotPaused {
         require(_isHolder(msg.sender), "Not a Staker");
 
         withdrawReward();
@@ -212,8 +237,9 @@ contract StakBank is Ownable {
         emit UserUnstakedAll(msg.sender);
     }
 
-    //-------------------reward-------------------/
-    function rewardDistribution() public onlyOwner {
+    /// @notice Owner can trigger distribution after "periodTime"
+    /// @dev Still encourage trigger this function when pool has not enough Eth to Reward (0.0006 eth). Users dont receive any eth
+    function rewardDistribution() public onlyOwner whenNotPaused {
         uint current = block.timestamp;
         uint timelast = current.sub(lastDis);
         
@@ -280,7 +306,8 @@ contract StakBank is Ownable {
         emit AdminDistributeReward(ethToReward, ethRewardedInThisDis);
     }
 
-    function withdrawReward() public {
+    /// @notice User can with withdraw all reward. staking coin still in the pool
+    function withdrawReward() public whenNotPaused {
         require(_isHolder(msg.sender), "Not a Staker");
 
         uint userReward = 0;
@@ -311,20 +338,29 @@ contract StakBank is Ownable {
         emit UserWithdrawedReward(msg.sender, userReward);
     }
 
-    //---------------------------------------------------------------------------
-
+    /// @dev Push staking detail in user's staking list
+    /// @dev coinToCalcReward = stakedAmount - stakedAmount % unitCoinToDivide
+    /// @param user Address of user
+    /// @param current Timestamp user stake coin
+    /// @param stakedAmount Amount of coin that user stake
+    /// @param coinToCalcReward Coin using to calc reward
     function _createNewTransaction(address user, uint current, uint stakedAmount, uint coinToCalcReward) private {
-        Detail memory detail = Detail(stakedAmount, coinToCalcReward, 0, 0, false, false, current);
+        Detail memory detail = Detail(stakedAmount, coinToCalcReward, 0, 0, false, false);
         _eStaker[user].push(detail);
 
         Transaction memory t = Transaction(user, current, coinToCalcReward, _eStaker[user].length);
         stakingTrans.push(t);
     }
 
+    /// @dev Check if a user is a holder
+    /// @param holder address of user
     function _isHolder(address holder) private view returns (bool) {
         return (_staking[holder] != 0);
     }
 
+    /// @dev Check if an idStake unstaked?
+    /// @param user Address of user
+    /// @param idStake Id of Staking transaction
     function _isUnstaked(address user, uint idStake) private view returns (bool) {
         if ((idStake < 1) || (idStake > _eStaker[user].length)) {
             return true;
@@ -332,16 +368,25 @@ contract StakBank is Ownable {
         return (_eStaker[user][idStake - 1].isUnstaked);
     }
 
+    /// @dev Transfer coin into pool to stake
+    /// @param from User's address
+    /// @param to StakBank's address
+    /// @param amount Amount of staking coin
     function _deliverTokensFrom(address from, address to, uint amount) private returns (bool) {
         IERC20(token).transferFrom(from, to, amount);
         return true;    
     }
 
+    /// @dev Transfer coin from pool back to user
+    /// @param to User's address
+    /// @param amount Amount of staking coin
     function _deliverTokens(address to, uint amount) private returns (bool) {
         IERC20(token).transfer(to, amount);
         return true;
     }
 
+    /// @dev Change amount of seconds to reasonable time unit
+    /// @param second Amount of second
     function _changeToAnotherUnitTime(uint second) private pure returns (uint, uint) {
         uint unitTime = 1;
         if (second <= 60) return (second, 1);
@@ -368,11 +413,7 @@ contract StakBank is Ownable {
         return (year, unitTime);
     } 
 
-    function sendAllEthToAdmin() external onlyOwner {
-        address payable admin = address(uint160(address(owner)));
-        admin.transfer(address(this).balance);
-    }
-
+    /// @dev Handle when pool not has enough Eth to Reward
     function _notEnoughEthToReward() private {
         for(uint i = 0; i < stakingTrans.length; i++) {
             Transaction memory transaction = stakingTrans[i];
@@ -389,11 +430,6 @@ contract StakBank is Ownable {
         }
 
         delete stakingTrans;
-    }
-
-    function timeStakedTransaction(uint idStake) public view returns (uint) {
-        if (idStake < 1 || idStake > _eStaker[msg.sender].length) return 0;
-        return _eStaker[msg.sender][idStake - 1].timestamp;
     }
 
 }
