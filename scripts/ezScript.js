@@ -6,7 +6,7 @@ async function main() {
     await jstToken.deployed();
     console.log(jstToken.address);
     let StakBank = await ethers.getContractFactory("StakBank");
-    let stakBank = await StakBank.deploy(jstToken.address, 60, 5, 2);
+    let stakBank = await StakBank.deploy(jstToken.address, 60, 5, 3);
     await stakBank.deployed();
     console.log(stakBank.address);
 }

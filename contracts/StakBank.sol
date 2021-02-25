@@ -165,6 +165,8 @@ contract StakBank is Ownable {
         _staking[sender] = _staking[sender].sub(coinNum);
 
         _eStaker[sender][idStake - 1].isUnstaked = true;
+
+        totalStaked = totalStaked.sub(coinNum);
     }
 
     function unstakeWithId(uint idStake) public {
