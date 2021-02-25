@@ -433,5 +433,3 @@ contract StakBank is Ownable, Pausable {
     }
 
 }
-
-
