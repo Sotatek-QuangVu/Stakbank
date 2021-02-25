@@ -25,7 +25,6 @@ describe("Stakbank contract", function() {
         jstToken = await JST.deploy(ethers.utils.parseUnits("100", 18));
         let StakBank = await ethers.getContractFactory("StakBank");
         stakBank = await StakBank.deploy(jstToken.address);
-        await jstToken.verifyStakBank(stakBank.address);
         console.log(`owner: ${owner.address} | address1: ${address1.address} | address2: ${address2.address} | address3: ${address3.address}`);
         periodTime = await stakBank.periodTime();
         feeUnitPercent = await stakBank.feeUnitPercent();
@@ -41,9 +40,6 @@ describe("Stakbank contract", function() {
             expect(await jstToken.owner()).to.equal(await stakBank.owner());
         });
 
-        it("Should verify stakBank successfully", async function() {
-            expect(await jstToken.StakBank()).to.equal(stakBank.address);
-        });
     });
 
     describe("Setup JST", function() {
