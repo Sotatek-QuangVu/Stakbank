@@ -103,6 +103,7 @@ contract StakBank is Ownable, Pausable {
     /// @dev platformFee = staked_coin * FeeUnit / (10 ^ Decimal)
     /// @param value Decimal in above formula
     function setDecimal(uint value) external onlyOwner {
+        require(value <= 20, "Too large");
         decimal = value;
 
         emit StakBankConfigurationChanged(msg.sender, block.timestamp);
@@ -188,6 +189,9 @@ contract StakBank is Ownable, Pausable {
         _eStaker[sender][idStake - 1].isUnstaked = true;
 
         totalStaked = totalStaked.sub(coinNum);
+        if (detail.isOldCoin) {
+            _totalStakedBeforeLastDis = _totalStakedBeforeLastDis.sub(detail.coinToCalcReward);
+        }
     }
 
     /// @notice User can unstake with idStake, get reward of that staking transaction
@@ -202,7 +206,6 @@ contract StakBank is Ownable, Pausable {
         uint reward = 0;
 
         if (detail.isOldCoin) {
-            _totalStakedBeforeLastDis = _totalStakedBeforeLastDis.sub(detail.coinToCalcReward);
             reward = _cummEth.sub(detail.cummEthLastWithdraw);
 
             uint numUnitCoin = (detail.coinToCalcReward).div(unitCoinToDivide);
