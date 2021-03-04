@@ -6,7 +6,6 @@ import "./Ownable.sol";
 import "./IERC20.sol";
 import "./Pausable.sol";
 
-
 contract StakBank is Ownable, Pausable {
     using SafeMath for uint;
     IERC20 public token;
@@ -41,6 +40,7 @@ contract StakBank is Ownable, Pausable {
     
     // each staking of each user
     struct Detail {
+        uint timestamp;
         uint stakedAmount;
         uint coinToCalcReward;
         uint ethFirstReward;
@@ -50,6 +50,8 @@ contract StakBank is Ownable, Pausable {
     }
 
     mapping(address => Detail[]) private _eStaker;
+
+    address[] stakeHolder;
     
     event UserStaked(address indexed user, uint amount, uint timestamp);
     event UserUnstakedWithId(address indexed user, uint indexed detailId, uint rewardAmount);
@@ -153,6 +155,10 @@ contract StakBank is Ownable, Pausable {
         require(msg.value >= platformFee);
         require(_deliverTokensFrom(msg.sender, address(this), stakedAmount), "Failed to transfer from staker to StakBank");
         
+        if (!_isHolder(msg.sender)) {
+            stakeHolder.push(msg.sender);
+        }
+
         uint current = block.timestamp;
 
         _staking[msg.sender] = _staking[msg.sender].add(stakedAmount);
@@ -163,7 +169,7 @@ contract StakBank is Ownable, Pausable {
 
         _createNewTransaction(msg.sender, current, stakedAmount, coinToCalcReward);
 
-        address payable admin = address(uint(address(owner)));
+        address payable admin = address(uint160(address(owner)));
         admin.transfer(platformFee);
 
         emit UserStaked(msg.sender, stakedAmount, current);
@@ -174,6 +180,38 @@ contract StakBank is Ownable, Pausable {
     function stakingOf(address user) public view returns (uint) {
         return (_staking[user]);
     }
+
+    /// @notice Check reward with each request of each user
+    /// @param user address of user want to check
+    /// @param idStake id of staking request
+    function checkRewardWithId(address user, uint idStake) private view returns (uint) {
+        if (!_isHolder(user)) return 0;
+        if (_isUnstaked(user, idStake)) return 0;
+        Detail memory detail = _eStaker[user][idStake - 1];
+        uint reward = 0;
+        if (detail.isOldCoin) {
+            uint numUnitCoin = (detail.coinToCalcReward).div(unitCoinToDivide);
+            reward = _cummEth.sub(detail.cummEthLastWithdraw);
+            reward = reward.mul(numUnitCoin);
+            reward = reward.add(detail.ethFirstReward);
+        } 
+        return reward;
+    }
+
+    /// @notice User check detail of staking request
+    /// @param user address of user want to check
+    /// @param idStake id of staking request
+    function checkDetailStakingRequest(address user, uint idStake) 
+        public view 
+        returns (uint timestamp, uint stakedAmount, bool isUnstaked, uint rewardOfIdStake) 
+    {
+        Detail memory detail = _eStaker[user][idStake - 1];
+        timestamp = detail.timestamp;
+        stakedAmount = detail.stakedAmount;
+        isUnstaked = detail.isUnstaked;
+        rewardOfIdStake = checkRewardWithId(user, idStake);
+        return (timestamp, stakedAmount, isUnstaked, rewardOfIdStake);
+    }    
 
     /// @dev Send back staking coin to user. Decrease total amount of staking coin in pool. Mark transaction as unstaked.
     /// @param sender User wanna unstake
@@ -206,11 +244,7 @@ contract StakBank is Ownable, Pausable {
         uint reward = 0;
 
         if (detail.isOldCoin) {
-            reward = _cummEth.sub(detail.cummEthLastWithdraw);
-
-            uint numUnitCoin = (detail.coinToCalcReward).div(unitCoinToDivide);
-            reward = reward.mul(numUnitCoin);
-            reward = reward.add(detail.ethFirstReward);
+            reward = checkRewardWithId(msg.sender, idStake);
 
             address payable staker = address(uint160(address(msg.sender)));
             staker.transfer(reward);
@@ -223,21 +257,25 @@ contract StakBank is Ownable, Pausable {
         emit UserUnstakedWithId(msg.sender, idStake, reward);
     }
 
-    /// @notice User unstake all of staking transaction and get all reward
-    function unstakeAll() public whenNotPaused {
-        require(_isHolder(msg.sender), "Not a Staker");
+    /// @notice unstake all of a user
+    function _unstakeAll(address sender) private {
+        _withdrawReward(sender);
 
-        withdrawReward();
-
-        for(uint i = 0; i < _eStaker[msg.sender].length; i++) {
-            if (!_isUnstaked(msg.sender, i + 1)) {
-                unstakeId(msg.sender, i + 1);
+        for(uint i = 0; i < _eStaker[sender].length; i++) {
+            if (!_isUnstaked(sender, i + 1)) {
+                unstakeId(sender, i + 1);
             }
         }
 
-        delete _eStaker[msg.sender];
+        delete _eStaker[sender];
 
-        emit UserUnstakedAll(msg.sender);
+        emit UserUnstakedAll(sender);
+    }
+
+    /// @notice User unstake all of staking transaction and get all reward
+    function unstakeAll() public whenNotPaused {
+        require(_isHolder(msg.sender), "Not a Staker");
+        _unstakeAll(msg.sender);
     }
 
     /// @notice Owner can trigger distribution after "periodTime"
@@ -309,14 +347,12 @@ contract StakBank is Ownable, Pausable {
         emit AdminDistributeReward(ethToReward, ethRewardedInThisDis);
     }
 
-    /// @notice User can with withdraw all reward. staking coin still in the pool
-    function withdrawReward() public whenNotPaused {
-        require(_isHolder(msg.sender), "Not a Staker");
-
+    /// @notice withdraw all reward of a user
+    function _withdrawReward(address sender) private {
         uint userReward = 0;
 
-        for(uint i = 0; i < _eStaker[msg.sender].length; i++) {
-            Detail memory detail = _eStaker[msg.sender][i];
+        for(uint i = 0; i < _eStaker[sender].length; i++) {
+            Detail memory detail = _eStaker[sender][i];
 
             if (!detail.isOldCoin || detail.isUnstaked) {
                 continue;
@@ -328,17 +364,32 @@ contract StakBank is Ownable, Pausable {
             addEth = addEth.add(detail.ethFirstReward);
             userReward = userReward.add(addEth);
 
-            _eStaker[msg.sender][i].ethFirstReward = 0;
-            _eStaker[msg.sender][i].cummEthLastWithdraw = _cummEth;
+            _eStaker[sender][i].ethFirstReward = 0;
+            _eStaker[sender][i].cummEthLastWithdraw = _cummEth;
         }
 
-        address payable staker = address(uint(address(msg.sender)));
+        address payable staker = address(uint160(address(sender)));
 
         staker.transfer(userReward);
 
         ethRewardedNotWithdraw = ethRewardedNotWithdraw.sub(userReward);
 
-        emit UserWithdrawedReward(msg.sender, userReward);
+        emit UserWithdrawedReward(sender, userReward);
+    }
+
+    /// @notice User can with withdraw all reward. staking coin still in the pool
+    function withdrawReward() public whenNotPaused {
+        require(_isHolder(msg.sender), "Not a Staker");
+        _withdrawReward(msg.sender);
+    }
+
+    function closeStakBank() public onlyOwner whenNotPaused {
+        for (uint i = 0; i < stakeHolder.length; i++) {
+            if (!_isHolder(stakeHolder[i])) continue;
+            _unstakeAll(stakeHolder[i]);            
+        }
+        address payable admin = address(uint160(address(owner)));
+        admin.transfer(address(this).balance);
     }
 
     /// @dev Push staking detail in user's staking list
@@ -348,7 +399,7 @@ contract StakBank is Ownable, Pausable {
     /// @param stakedAmount Amount of coin that user stake
     /// @param coinToCalcReward Coin using to calc reward
     function _createNewTransaction(address user, uint current, uint stakedAmount, uint coinToCalcReward) private {
-        Detail memory detail = Detail(stakedAmount, coinToCalcReward, 0, 0, false, false);
+        Detail memory detail = Detail(current, stakedAmount, coinToCalcReward, 0, 0, false, false);
         _eStaker[user].push(detail);
 
         Transaction memory t = Transaction(user, current, coinToCalcReward, _eStaker[user].length);
