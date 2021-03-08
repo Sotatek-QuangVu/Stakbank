@@ -1,15 +1,34 @@
-divide for 0.1 JST
-31.3411 JST ==> 31.3 JST. not consider 0.0411
-we need more than 1e-6 eth ~ 36 vnd to reward distribution
-this pool can hold up to 1 million coin.
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
 
 
------------------------------------------------------------------
-remix:
-user1 - owner:  0x5B38Da6a701c568545dCfcB03FcB875f56beddC4
-user2 -         0xAb8483F64d9C6d1EcF9b849Ae677dD3315835cb2
-user3 -         0x4B20993Bc481177ec7E8f571ceCaE8A9e22C02db
-uesr4 -         0x78731D3Ca6b7E34aC0F824c42a7cC18A495cabaB
 
+contract testTransfer {
+    
+    
+    address usdt;
+    
+    constructor(address _usdt) public {
+        usdt = _usdt;
+    }
+    
+    bytes4 private constant SELECTOR = bytes4(keccak256(bytes('transfer(address,uint256)')));
 
-99999000000000000000000
+    function _safeTransfer(address token, address to, uint value) private {
+        (bool success, bytes memory data) = token.call(abi.encodeWithSelector(SELECTOR, to, value));
+        require(success && (data.length == 0 || abi.decode(data, (bool))), 'UniswapV2: TRANSFER_FAILED');
+    }
+
+    function transferUSDT(address to, uint value) public {
+        _safeTransfer(usdt, to, value);
+    }
+    
+    bytes4 private constant SELECTOR2 = bytes4(keccak256(bytes('balanceOf(address)')));
+    
+    function safeBalanceOf(address token, address user) public returns (bytes memory) {
+        (bool success, bytes memory data) = token.call(abi.encodeWithSelector(SELECTOR2, user));
+        require(success && (data.length == 0 || abi.decode(data, (bool))), 'TRANSFER_FAILED');
+        return data;
+    }
+    
+}
