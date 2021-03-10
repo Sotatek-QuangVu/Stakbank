@@ -1,6 +1,7 @@
 require("@nomiclabs/hardhat-waffle");
 require("@nomiclabs/hardhat-ethers");
 require("@nomiclabs/hardhat-etherscan");
+require("@nomiclabs/hardhat-web3");
 
 // This is a sample Hardhat task. To learn how to create your own go to
 // https://hardhat.org/guides/create-task.html
@@ -22,6 +23,12 @@ module.exports = {
     },
     ropsten: {
       url: "https://ropsten.infura.io/v3/3345e1dbef234ad78bbc6a38d5585c6d",
+      accounts: [
+        "836f8208ae68761fd90bc51f8bc41083d60a486b1848007817a84495cc8d9689"
+      ]
+    },
+    goerli: {
+      url: "https://goerli.infura.io/v3/fa2eb114f1084dd694d5f8817dc6bc26",
       accounts: [
         "836f8208ae68761fd90bc51f8bc41083d60a486b1848007817a84495cc8d9689"
       ]
